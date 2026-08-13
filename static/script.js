@@ -1,125 +1,205 @@
-const textInput = document.getElementById("textInput");
-const analyzeBtn = document.getElementById("analyzeBtn");
-const resultSection = document.getElementById("resultSection");
-const emotionWord = document.getElementById("emotionWord");
-const emotionEmoji = document.getElementById("emotionEmoji");
-const confidenceText = document.getElementById("confidenceText");
-const echoedText = document.getElementById("echoedText");
-const errorMsg = document.getElementById("errorMsg");
-const statusDot = document.getElementById("statusDot");
-const serverStatusText = document.getElementById("serverStatusText");
-const charCount = document.getElementById("charCount");
-const barsContainer = document.getElementById("barsContainer");
+(() => {
+  "use strict";
 
-const apiUrl = "/predict";
+  const EMOJI = {
+    sadness: "😢",
+    joy: "😄",
+    love: "❤️",
+    anger: "😠",
+    fear: "😨",
+    surprise: "😲",
+  };
 
-function updateCharCount() {
-  charCount.textContent = String(textInput.value.length);
-  analyzeBtn.disabled = textInput.value.trim().length === 0;
-}
+  const el = {
+    statusDot: document.getElementById("statusDot"),
+    serverStatusText: document.getElementById("serverStatusText"),
+    textInput: document.getElementById("textInput"),
+    charCount: document.getElementById("charCount"),
+    analyzeBtn: document.getElementById("analyzeBtn"),
+    errorMsg: document.getElementById("errorMsg"),
+    orb: document.getElementById("orb"),
+    orbEmoji: document.getElementById("orbEmoji"),
+    resultSection: document.getElementById("resultSection"),
+    emotionWord: document.getElementById("emotionWord"),
+    emotionEmoji: document.getElementById("emotionEmoji"),
+    confidenceText: document.getElementById("confidenceText"),
+    echoedText: document.getElementById("echoedText"),
+    barsContainer: document.getElementById("barsContainer"),
+  };
 
-async function checkHealth() {
-  try {
-    const response = await fetch("/health");
-    const data = await response.json();
-    const okay = response.ok && data.model_loaded;
-    statusDot.style.background = okay ? "#24d17e" : "#ffb84d";
-    statusDot.title = okay ? "model ready" : "model loading";
-    serverStatusText.textContent = okay
-      ? "model ready"
-      : "connecting to model…";
-  } catch (error) {
-    statusDot.style.background = "#ff7b7b";
-    statusDot.title = "server unavailable";
-    serverStatusText.textContent = "server unavailable";
-  }
-}
+  let modelReady = false;
 
-function renderBarChart(probabilities) {
-  barsContainer.innerHTML = "";
-  const entries = Object.entries(probabilities).map(([label, value]) => ({
-    label,
-    value,
-  }));
-  const max = Math.max(...entries.map((item) => item.value));
+  /* ---------------------------------------------------------------
+     Health check — poll until the model is loaded
+  --------------------------------------------------------------- */
+  async function checkHealth() {
+    try {
+      const res = await fetch("/health");
+      if (!res.ok) throw new Error("bad status");
+      const data = await res.json();
 
-  entries.forEach(({ label, value }) => {
-    const row = document.createElement("div");
-    row.className = "bar-item";
-
-    const top = document.createElement("div");
-    top.className = "bar-top";
-    top.innerHTML = `<span>${label}</span><span>${(value * 100).toFixed(1)}%</span>`;
-
-    const track = document.createElement("div");
-    track.className = "bar-track";
-
-    const fill = document.createElement("div");
-    fill.className = "bar-fill";
-    fill.style.width = `${(value / max) * 100}%`;
-
-    track.appendChild(fill);
-    row.appendChild(top);
-    row.appendChild(track);
-    barsContainer.appendChild(row);
-  });
-}
-
-async function sendPrediction() {
-  const text = textInput.value.trim();
-  if (!text) {
-    return;
-  }
-
-  errorMsg.hidden = true;
-  analyzeBtn.disabled = true;
-  analyzeBtn.textContent = "Analyzing…";
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || "Prediction failed");
+      modelReady = !!data.model_loaded;
+      if (modelReady) {
+        setStatus("live", "model ready — say something");
+      } else {
+        setStatus("warming", "waking the model up…");
+        setTimeout(checkHealth, 3000);
+      }
+    } catch (e) {
+      setStatus("down", "can't reach the server");
+      setTimeout(checkHealth, 5000);
     }
-
-    const label = data.predicted_emotion;
-    const emojiMap = {
-      sadness: "😢",
-      joy: "😄",
-      love: "❤️",
-      anger: "😠",
-      fear: "😨",
-      surprise: "😲",
-    };
-
-    emotionWord.textContent = label.charAt(0).toUpperCase() + label.slice(1);
-    emotionEmoji.textContent = emojiMap[label] || "✨";
-    confidenceText.textContent = `${(data.confidence * 100).toFixed(1)}% confidence`;
-    echoedText.textContent = text;
-    renderBarChart(data.all_probabilites);
-    resultSection.hidden = false;
-  } catch (error) {
-    errorMsg.textContent = error.message;
-    errorMsg.hidden = false;
-  } finally {
-    analyzeBtn.disabled = false;
-    analyzeBtn.innerHTML =
-      '<span class="btn-label">Read the mood</span><span class="btn-arrow">→</span>';
+    syncButtonState();
   }
-}
 
-textInput.addEventListener("input", updateCharCount);
-textInput.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-    sendPrediction();
+  function setStatus(kind, text) {
+    el.statusDot.className = "brand-mark " + kind;
+    el.serverStatusText.textContent = text;
   }
-});
-analyzeBtn.addEventListener("click", sendPrediction);
 
-updateCharCount();
-checkHealth();
+  /* ---------------------------------------------------------------
+     Input handling
+  --------------------------------------------------------------- */
+  el.textInput.addEventListener("input", () => {
+    el.charCount.textContent = el.textInput.value.length;
+    syncButtonState();
+  });
+
+  el.textInput.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      runAnalysis();
+    }
+  });
+
+  function syncButtonState() {
+    const hasText = el.textInput.value.trim().length > 0;
+    el.analyzeBtn.disabled = !hasText || !modelReady;
+  }
+
+  el.analyzeBtn.addEventListener("click", runAnalysis);
+
+  /* ---------------------------------------------------------------
+     Analysis flow
+  --------------------------------------------------------------- */
+  async function runAnalysis() {
+    const text = el.textInput.value.trim();
+    if (!text || !modelReady) return;
+
+    hideError();
+    enterThinking();
+
+    try {
+      const res = await fetch("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail =
+          body && body.detail
+            ? typeof body.detail === "string"
+              ? body.detail
+              : "The model couldn't process that sentence."
+            : `Request failed (${res.status}).`;
+        throw new Error(detail);
+      }
+
+      const data = await res.json();
+      renderResult(data, text);
+    } catch (err) {
+      exitThinking(false);
+      showError(err.message || "Something went wrong. Try again.");
+    }
+  }
+
+  function enterThinking() {
+    el.analyzeBtn.classList.add("loading");
+    el.analyzeBtn.querySelector(".btn-label").textContent = "Reading…";
+    el.analyzeBtn.disabled = true;
+    el.orb.classList.remove("settled");
+    el.orb.classList.add("thinking");
+    el.orbEmoji.style.opacity = "0";
+  }
+
+  function exitThinking(success) {
+    el.analyzeBtn.classList.remove("loading");
+    el.analyzeBtn.querySelector(".btn-label").textContent = "Read the mood";
+    syncButtonState();
+    el.orb.classList.remove("thinking");
+    if (!success) {
+      el.orbEmoji.textContent = "✎";
+      el.orbEmoji.style.opacity = "1";
+    }
+  }
+
+  function renderResult(data, originalText) {
+    const emotion = data.predicted_emotion;
+    const emoji = EMOJI[emotion] || "🙂";
+
+    document.body.setAttribute("data-emotion", emotion);
+
+    el.orb.classList.add("settled");
+    el.orbEmoji.textContent = emoji;
+    el.orbEmoji.style.opacity = "1";
+    exitThinking(true);
+
+    el.emotionWord.textContent = capitalize(emotion);
+    el.emotionEmoji.textContent = emoji;
+    el.confidenceText.textContent = `${(data.confidence * 100).toFixed(1)}% confidence`;
+    el.echoedText.textContent = `“${originalText}”`;
+
+    renderBars(data.all_probabilites);
+
+    el.resultSection.hidden = false;
+    el.resultSection.classList.remove("entering");
+    void el.resultSection.offsetWidth; // restart animation
+    el.resultSection.classList.add("entering");
+
+    el.resultSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderBars(probs) {
+    const entries = Object.entries(probs).sort((a, b) => b[1] - a[1]);
+    el.barsContainer.innerHTML = "";
+
+    entries.forEach(([label, value], i) => {
+      const pct = value * 100;
+      const row = document.createElement("div");
+      row.className = `bar-row bar-${label}`;
+      row.innerHTML = `
+        <span class="bar-label">${EMOJI[label] || ""} ${label}</span>
+        <span class="bar-track"><span class="bar-fill"></span></span>
+        <span class="bar-pct">${pct.toFixed(1)}%</span>
+      `;
+      el.barsContainer.appendChild(row);
+
+      const fill = row.querySelector(".bar-fill");
+      setTimeout(
+        () => {
+          fill.style.width = pct + "%";
+        },
+        60 + i * 70,
+      );
+    });
+  }
+
+  function showError(msg) {
+    el.errorMsg.textContent = msg;
+    el.errorMsg.hidden = false;
+  }
+  function hideError() {
+    el.errorMsg.hidden = true;
+  }
+
+  function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  /* ---------------------------------------------------------------
+     Boot
+  --------------------------------------------------------------- */
+  checkHealth();
+})();
