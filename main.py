@@ -1,16 +1,18 @@
 
-from tensorflow.keras.preprocessing.sequence import pad_sequences  # type: ignore
-from tensorflow.keras.preprocessing.text import Tokenizer  # type: ignore
-from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
-from keras.models import load_model
-import numpy as np
 import pickle
 import re
+from contextlib import asynccontextmanager
+
+import numpy as np
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from keras.models import load_model
+from pydantic import BaseModel, Field
+from tensorflow.keras.preprocessing.sequence import pad_sequences  # type: ignore
+from tensorflow.keras.preprocessing.text import Tokenizer  # type: ignore
 
 
 
@@ -187,3 +189,7 @@ def predict_emotion(text_input: TextInput):
         confidence = float(probabilites[top_emotion_index]), 
         all_probabilites = all_probabilites
     )
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
