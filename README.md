@@ -179,15 +179,6 @@ The notebook `final_clean.ipynb` documents:
 - TensorFlow import or large memory usage: consider installing `tensorflow` (GPU) or ensuring adequate RAM; `tensorflow-cpu` is in `requirements.txt` but can still use significant memory.
 - Mismatch between tokenizer and model → retrain or use the tokenizer used during training.
 
-## Development & contributions
-
-The project is small and self-contained. Main extension points:
-
-- Replace or retrain the model (update `Artifacts/`, keep paths or change `main.py`)
-- Add authentication or rate-limiting to the API
-- Improve preprocessing or extend the label set
-
-Please open issues or PRs if you want to contribute.
 
 ## Dependencies
 
